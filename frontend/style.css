@@ -160,6 +160,20 @@ html, body {
 }
 #shuffle-btn:hover { background: #383848; }
 
+#clear-queue-btn {
+  display: block;
+  width: 100%;
+  margin-bottom: 12px;
+  padding: 10px;
+  background: #2c1e1e;
+  color: #f2a0a0;
+  border: 1px solid #4a2c2c;
+  border-radius: 8px;
+  font-size: 14px;
+  cursor: pointer;
+}
+#clear-queue-btn:hover { background: #3a2626; }
+
 .track-item {
   padding: 8px 12px;
   border-radius: 6px;

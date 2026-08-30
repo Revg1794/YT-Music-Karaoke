@@ -79,7 +79,7 @@ function applyQueueState(state) {
   }
 
   const nowPlayingId = currentTracks[currentIndex] ? currentTracks[currentIndex].videoId : null;
-  if (nowPlayingId && nowPlayingId !== previousPlayingId) {
+  if (nowPlayingId !== previousPlayingId) {
     loadCurrentTrackIntoPlayer();
   }
 }
@@ -241,6 +241,14 @@ function showQueue() {
     libraryListEl.appendChild(shuffleBtn);
   }
 
+  if (currentTracks.length > 0) {
+    const clearBtn = document.createElement("button");
+    clearBtn.id = "clear-queue-btn";
+    clearBtn.textContent = "🗑️ Clear Queue";
+    clearBtn.onclick = clearQueue;
+    libraryListEl.appendChild(clearBtn);
+  }
+
   renderTrackList(currentTracks, "queue");
 }
 
@@ -333,6 +341,11 @@ async function shuffleQueue() {
   applyQueueState(await api("/api/queue/shuffle", { method: "POST" }));
 }
 
+async function clearQueue() {
+  if (!confirm("Clear the entire queue? This also stops the current track.")) return;
+  applyQueueState(await postJson("/api/queue/set", { tracks: [], startIndex: -1 }));
+}
+
 function highlightPlayingTrack() {
   const playingId = currentTracks[currentIndex] ? currentTracks[currentIndex].videoId : null;
   document.querySelectorAll(".track-item").forEach((el) => {
@@ -352,6 +365,7 @@ function loadCurrentTrackIntoPlayer() {
     trackArtistEl.textContent = "";
     albumArtEl.hidden = true;
     resetLyrics("Pick a track from the library to start.");
+    if (playerReady) ytPlayer.stopVideo();
     return;
   }
 

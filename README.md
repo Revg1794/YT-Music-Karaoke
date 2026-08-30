@@ -8,6 +8,18 @@ Personal-use only: it authenticates as *you* via cookies from your own logged-in
 session (using [ytmusicapi](https://github.com/sigma67/ytmusicapi), an unofficial library),
 and is not meant to be exposed to the internet or other users.
 
+## Screenshots
+
+| Main view | TV mode |
+|---|---|
+| ![Main view: library sidebar, player, and lyrics panel](screenshots/main-view.png) | ![TV mode: big album art and lyrics, sidebar hidden](screenshots/tv-mode.png) |
+
+| First-run tour | Phone remote (party mode) |
+|---|---|
+| ![Guided first-run tooltip pointing at the search box](screenshots/tour.png) | ![Remote page on a phone: reactions, search, and queue](screenshots/remote.png) |
+
+(The lyrics shown above are placeholder demo text, not real song lyrics.)
+
 ## Getting the code (new to Git? read this)
 
 You don't need to know Git at all to just try the app once:

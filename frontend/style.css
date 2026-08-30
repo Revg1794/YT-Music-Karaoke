@@ -49,11 +49,15 @@ html, body {
 #search-box::placeholder { color: #6f6f7c; }
 #search-box:disabled { opacity: 0.6; }
 
-#queue-btn {
-  flex-shrink: 0;
-  display: block;
-  width: 100%;
+#header-row {
+  display: flex;
+  gap: 8px;
   margin-bottom: 12px;
+}
+
+#queue-btn {
+  flex: 1;
+  min-width: 0;
   padding: 8px 10px;
   background: #1e1e26;
   border: 1px solid #2c2c3a;
@@ -63,6 +67,18 @@ html, body {
   cursor: pointer;
   text-align: left;
 }
+
+#help-btn {
+  flex-shrink: 0;
+  width: 36px;
+  background: #1e1e26;
+  border: 1px solid #2c2c3a;
+  color: #e8e8ec;
+  border-radius: 8px;
+  font-size: 13px;
+  cursor: pointer;
+}
+#help-btn:hover { background: #2c2c3a; }
 
 #recap-btn {
   flex-shrink: 0;
@@ -312,6 +328,9 @@ body.tv-mode #album-art {
   justify-content: center;
   z-index: 100;
 }
+#lyrics-edit-overlay[hidden] {
+  display: none;
+}
 #lyrics-edit-box {
   background: #131318;
   border: 1px solid #2c2c3a;
@@ -364,6 +383,9 @@ body.tv-mode #album-art {
   justify-content: center;
   z-index: 100;
 }
+#recap-overlay[hidden] {
+  display: none;
+}
 #recap-box {
   background: #131318;
   border: 1px solid #2c2c3a;
@@ -388,6 +410,38 @@ body.tv-mode #album-art {
   font-size: 13px;
 }
 #recap-close:hover { background: #2c2c3a; }
+
+#tour-tooltip {
+  position: fixed;
+  z-index: 200;
+  max-width: 260px;
+  background: #1e1e26;
+  border: 1px solid #4a4a56;
+  border-radius: 10px;
+  padding: 12px 14px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+#tour-text { font-size: 13px; line-height: 1.4; margin-bottom: 10px; }
+#tour-actions { display: flex; justify-content: space-between; gap: 8px; }
+#tour-actions button {
+  background: #2c2c3a;
+  color: #e8e8ec;
+  border: none;
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 12px;
+  cursor: pointer;
+}
+#tour-actions button:hover { background: #383848; }
+#tour-next { background: #4a4a56; }
+#tour-next:hover { background: #5a5a68; }
+
+.tour-highlight {
+  outline: 2px solid #7dd3fc;
+  outline-offset: 2px;
+  position: relative;
+  z-index: 201;
+}
 
 #yt-player {
   position: fixed;

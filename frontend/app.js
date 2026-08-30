@@ -24,6 +24,11 @@ const recapBtn = document.getElementById("recap-btn");
 const recapOverlay = document.getElementById("recap-overlay");
 const recapListEl = document.getElementById("recap-list");
 const recapClose = document.getElementById("recap-close");
+const helpBtn = document.getElementById("help-btn");
+const tourTooltipEl = document.getElementById("tour-tooltip");
+const tourTextEl = document.getElementById("tour-text");
+const tourNextBtn = document.getElementById("tour-next");
+const tourSkipBtn = document.getElementById("tour-skip");
 
 let lastReactionTs = 0;
 
@@ -726,6 +731,74 @@ window.onYouTubeIframeAPIReady = function () {
   });
 };
 
+const TOUR_STEPS = [
+  {
+    selector: "#search-box",
+    text: "Search your whole library here — or all of YouTube Music, if your library doesn't have it.",
+  },
+  {
+    selector: "#queue-btn",
+    text: "See what's queued up next, remove songs, or shuffle the order.",
+  },
+  {
+    selector: "#tv-mode-btn",
+    text: "Go fullscreen with big lyrics — perfect when this is up on a TV.",
+  },
+  {
+    selector: "#party-info",
+    text: "Guests on your WiFi can scan this to add songs from their phone.",
+  },
+];
+
+let tourIndex = 0;
+let tourTarget = null;
+
+function showTourStep(index) {
+  if (tourTarget) tourTarget.classList.remove("tour-highlight");
+
+  if (index >= TOUR_STEPS.length) {
+    endTour();
+    return;
+  }
+
+  const step = TOUR_STEPS[index];
+  const target = document.querySelector(step.selector);
+  if (!target || target.hidden || target.offsetParent === null) {
+    showTourStep(index + 1);
+    return;
+  }
+
+  tourIndex = index;
+  tourTarget = target;
+  target.classList.add("tour-highlight");
+
+  const rect = target.getBoundingClientRect();
+  tourTextEl.textContent = step.text;
+  tourNextBtn.textContent = index === TOUR_STEPS.length - 1 ? "Got it!" : "Next";
+  tourTooltipEl.style.top = `${rect.bottom + 8}px`;
+  tourTooltipEl.style.left = `${Math.max(8, rect.left)}px`;
+  tourTooltipEl.hidden = false;
+}
+
+function startTour() {
+  showTourStep(0);
+}
+
+function endTour() {
+  if (tourTarget) tourTarget.classList.remove("tour-highlight");
+  tourTarget = null;
+  tourTooltipEl.hidden = true;
+  try {
+    localStorage.setItem("karaoke_tour_seen", "true");
+  } catch (err) {
+    // ignore -- storage unavailable, just won't remember for next time
+  }
+}
+
+tourNextBtn.onclick = () => showTourStep(tourIndex + 1);
+tourSkipBtn.onclick = endTour;
+helpBtn.onclick = startTour;
+
 loadLibrary();
 loadSearchIndex();
 refreshQueue();
@@ -733,3 +806,14 @@ setInterval(refreshQueue, 3000);
 loadPartyInfo();
 pollReactions();
 setInterval(pollReactions, 1500);
+
+let tourSeen = false;
+try {
+  tourSeen = Boolean(localStorage.getItem("karaoke_tour_seen"));
+} catch (err) {
+  // ignore -- storage unavailable, just show the tour every time
+}
+if (!tourSeen) {
+  // give party-info a moment to finish loading so its tour step has a target
+  setTimeout(startTour, 1500);
+}

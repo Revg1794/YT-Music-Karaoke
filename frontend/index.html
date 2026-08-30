@@ -10,7 +10,10 @@
     <aside id="sidebar">
       <h1>Library</h1>
       <input id="search-box" type="text" placeholder="Loading library index…" disabled />
-      <button id="queue-btn">🎵 Queue (0)</button>
+      <div id="header-row">
+        <button id="queue-btn">🎵 Queue (0)</button>
+        <button id="help-btn" title="Show the quick tour">❓</button>
+      </div>
       <button id="recap-btn">🏆 Recap</button>
       <div id="party-info" hidden>
         📱 Guests: <a id="party-link" href="#" target="_blank"></a>
@@ -69,6 +72,14 @@
         <h2>🏆 Tonight's Recap</h2>
         <div id="recap-list"></div>
         <button id="recap-close">Close</button>
+      </div>
+    </div>
+
+    <div id="tour-tooltip" hidden>
+      <div id="tour-text"></div>
+      <div id="tour-actions">
+        <button id="tour-skip">Skip</button>
+        <button id="tour-next">Next</button>
       </div>
     </div>
   </div>

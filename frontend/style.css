@@ -318,6 +318,11 @@ body.tv-mode #album-art {
   margin-left: 8px;
 }
 #controls button:hover { background: #2c2c3a; }
+#controls button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+#controls button:disabled:hover { background: #22222a; }
 
 #lyrics-edit-overlay {
   position: fixed;

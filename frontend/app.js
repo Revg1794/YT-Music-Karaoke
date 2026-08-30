@@ -711,6 +711,19 @@ async function autoRadio() {
   }
 }
 
+const YT_PLAYER_ERROR_MESSAGES = {
+  2: "That video's ID looks invalid.",
+  5: "That video can't be played in this embedded player.",
+  100: "That video was removed or is private.",
+  101: "The uploader doesn't allow this video to be played in embedded players.",
+  150: "The uploader doesn't allow this video to be played in embedded players.",
+};
+
+function onPlayerError(event) {
+  const message = YT_PLAYER_ERROR_MESSAGES[event.data] || "This video can't be played here.";
+  resetLyrics(`${message} Try skipping to another track.`);
+}
+
 window.onYouTubeIframeAPIReady = function () {
   ytPlayer = new YT.Player("yt-player", {
     height: "180",
@@ -719,6 +732,12 @@ window.onYouTubeIframeAPIReady = function () {
     events: {
       onReady: () => {
         playerReady = true;
+        playBtn.disabled = false;
+        prevBtn.disabled = false;
+        nextBtn.disabled = false;
+        playBtn.title = "";
+        prevBtn.title = "";
+        nextBtn.title = "";
         syncTimer = setInterval(syncLyrics, 200);
         populateSpeedOptions();
         const track = currentTracks[currentIndex];
@@ -727,9 +746,22 @@ window.onYouTubeIframeAPIReady = function () {
         }
       },
       onStateChange: onPlayerStateChange,
+      onError: onPlayerError,
     },
   });
 };
+
+// If the YouTube IFrame API never calls back (blocked script, no internet,
+// DNS filtering, etc.), tell the user instead of leaving the transport
+// controls silently disabled forever with no explanation.
+setTimeout(() => {
+  if (!playerReady) {
+    resetLyrics(
+      "Couldn't load YouTube's player. Check your internet connection (or any DNS/ad " +
+        "blocking) and refresh the page."
+    );
+  }
+}, 10000);
 
 const TOUR_STEPS = [
   {

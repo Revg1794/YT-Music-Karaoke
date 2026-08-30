@@ -1,0 +1,7 @@
+fastapi
+uvicorn[standard]
+ytmusicapi
+httpx
+playwright
+youtube-transcript-api
+qrcode[pil]

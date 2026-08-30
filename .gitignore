@@ -1,0 +1,6 @@
+browser.json
+lyrics_cache.json
+queue_state.json
+__pycache__/
+*.pyc
+.venv/

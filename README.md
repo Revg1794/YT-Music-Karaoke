@@ -8,6 +8,46 @@ Personal-use only: it authenticates as *you* via cookies from your own logged-in
 session (using [ytmusicapi](https://github.com/sigma67/ytmusicapi), an unofficial library),
 and is not meant to be exposed to the internet or other users.
 
+## Getting the code (new to Git? read this)
+
+You don't need to know Git at all to just try the app once:
+
+1. Click the green **`<> Code`** button at the top of this GitHub page.
+2. Click **Download ZIP**.
+3. Extract the ZIP anywhere (e.g. `Documents\YT-Music-Karaoke`).
+4. Continue with **Quick start** below.
+
+If you'd rather use Git (recommended if you want to easily grab future updates instead of
+re-downloading a ZIP each time):
+
+1. Install [Git for Windows](https://git-scm.com/download/win) if you don't already have it.
+2. Open a terminal in the folder where you want the project to live, and run:
+   ```
+   git clone https://github.com/Revg1794/YT-Music-Karaoke.git
+   ```
+   This creates a `YT-Music-Karaoke` folder containing the full project.
+3. Whenever you want to grab the latest changes later, open a terminal *inside* that folder
+   and run:
+   ```
+   git pull
+   ```
+
+A few terms, if they're unfamiliar:
+- **Repository ("repo")** — the project's folder, plus its full saved history.
+- **Commit** — a saved snapshot of changes, with a short message describing them.
+- **Push** — send your local commits up to GitHub.
+- **Pull** — download commits from GitHub into your local copy.
+- **Remote / origin** — the GitHub copy your local folder is linked to.
+
+Two errors you might hit if you go on to make your own commits:
+- `fatal: not a git repository` — you ran a git command outside the project folder. `cd` into
+  it first (e.g. `cd F:\Projects\YT-Music-Karaoke`).
+- `Please tell me who you are` — one-time setup Git needs before it will let you commit:
+  ```
+  git config --global user.name "Your Name"
+  git config --global user.email "you@example.com"
+  ```
+
 ## Quick start
 
 1. Make sure [Python 3.10+](https://python.org) and [Google Chrome](https://www.google.com/chrome/)

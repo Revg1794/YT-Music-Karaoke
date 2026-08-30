@@ -128,6 +128,50 @@ headers you copy out of Chrome DevTools yourself:
 - **Never paste header/cookie content into a chat/AI assistant** — treat it like a password.
   Everything above should stay local to your machine.
 
+## Troubleshooting / FAQ
+
+**`run.bat` says "Python was not found on your PATH."**
+Install Python from [python.org](https://python.org) and make sure you check "Add python.exe
+to PATH" during install (it's unchecked by default). Then run `run.bat` again.
+
+**Windows Firewall popped up asking to allow Python — is that safe to approve?**
+Yes. It's asking because the server binds to your whole network (so `/remote` works on phones),
+not just this PC. Approve it for **Private networks**; you don't need Public.
+
+**A Chrome window opened for login but it says "browser is deprecated" or looks broken.**
+This shouldn't happen with the current `setup_auth.py` (it drives your real installed Chrome),
+but if you see it, make sure Chrome itself is up to date. If `setup_auth.py` can't find Chrome
+at all, it'll tell you to install it from google.com/chrome — Playwright needs the real browser,
+not just any browser.
+
+**Setup asked me to verify it's really me (2FA / "is this you?") even though I'm already
+logged into Chrome elsewhere.**
+Expected — `setup_auth.py` opens a fresh, isolated browser profile each time (not your everyday
+one), so Google treats it as a new device. Not a bug.
+
+**Guests can't reach the `/remote` link on their phone.**
+Check they're on the **same WiFi network** as the host PC — this only works on your local
+network, not the internet. If they still can't connect, double-check the Windows Firewall
+prompt above was approved (declining it silently blocks other devices).
+
+**`git commit` says "Please tell me who you are."**
+See the one-time `git config` setup in **Getting the code** above.
+
+**"Address already in use" when starting the server.**
+Something's already running on port 8000 — most likely a previous copy of this app still
+running in another window. Close that window, or find and stop the process:
+```
+netstat -ano | findstr :8000
+taskkill /PID <the number in the last column> /F
+```
+
+**My session expired / library calls started failing after it worked fine before.**
+Delete `browser.json` and run `run.bat` again to reconnect your account — see **Quick start**.
+
+**A song has no lyrics, or the wrong lyrics.**
+See **Notes / known limitations** below — you can also paste your own lyrics for that song
+using the ✎ button next to the player controls.
+
 ## Notes / known limitations
 
 - If a track has no match on LRCLIB, you'll see "No lyrics found" instead of a sync view.

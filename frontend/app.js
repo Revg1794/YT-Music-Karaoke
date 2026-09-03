@@ -29,8 +29,18 @@ const tourTooltipEl = document.getElementById("tour-tooltip");
 const tourTextEl = document.getElementById("tour-text");
 const tourNextBtn = document.getElementById("tour-next");
 const tourSkipBtn = document.getElementById("tour-skip");
+const refreshLibraryBtn = document.getElementById("refresh-library-btn");
+const offsetIndicatorEl = document.getElementById("lyric-offset");
+const hostLockEl = document.getElementById("host-lock");
+const hostUnlockBtn = document.getElementById("host-unlock-btn");
 
-let lastReactionTs = 0;
+let lastReactionSeq = 0;
+// Separate from lastReactionSeq: on a fresh server nobody has reacted yet, so
+// the sequence sits at 0 through any number of polls. Using it as the "have we
+// synced yet" flag swallowed the first reactions of the night, every night.
+let reactionsPrimed = false;
+let currentOffsetSec = 0;
+let rotationEnabled = true;
 
 let ytPlayer = null;
 let playerReady = false;
@@ -53,23 +63,88 @@ async function api(path, options) {
   const res = await fetch(path, options);
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new Error(body.detail || `Request failed: ${path}`);
+    const error = new Error(body.detail || `Request failed: ${path}`);
+    error.status = res.status;
+    throw error;
   }
   return res.json();
 }
 
-function postJson(path, body) {
-  return api(path, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
+// Host controls are PIN-gated so guests can't skip or clear the queue. This
+// page gets the PIN handed to it automatically when it's running on the same
+// machine as the server; anywhere else (a TV browser on the LAN) it asks once.
+let hostPin = null;
+
+function readStoredPin() {
+  try {
+    return localStorage.getItem("karaoke_host_pin");
+  } catch (err) {
+    return null;
+  }
+}
+
+function storePin(pin) {
+  hostPin = pin;
+  try {
+    localStorage.setItem("karaoke_host_pin", pin);
+  } catch (err) {
+    // ignore -- storage unavailable, PIN just won't survive a refresh
+  }
+}
+
+async function loadHostPin() {
+  try {
+    storePin((await api("/api/host-pin")).pin);
+  } catch (err) {
+    // Not the server's own machine. A PIN from an earlier session may be
+    // stale (it's regenerated per run) -- we find out on the first 403.
+    hostPin = readStoredPin();
+  }
+  updateHostLockUi();
+}
+
+const hostPinReady = loadHostPin();
+
+function updateHostLockUi() {
+  if (hostLockEl) hostLockEl.hidden = Boolean(hostPin);
+}
+
+function promptForHostPin() {
+  const entered = window.prompt(
+    "Host controls are locked. Enter the host PIN shown in the server window:"
+  );
+  if (!entered) return false;
+  storePin(entered.trim());
+  updateHostLockUi();
+  return true;
+}
+
+function requestOptions(body) {
+  const headers = { "Content-Type": "application/json" };
+  if (hostPin) headers["X-Host-Pin"] = hostPin;
+  return { method: "POST", headers, body: JSON.stringify(body) };
+}
+
+async function postJson(path, body) {
+  await hostPinReady;
+  try {
+    return await api(path, requestOptions(body));
+  } catch (err) {
+    if (err.status !== 403) throw err;
+    hostPin = null;
+    updateHostLockUi();
+    if (!promptForHostPin()) throw err;
+    return api(path, requestOptions(body));
+  }
 }
 
 function applyQueueState(state) {
-  const previousPlayingId = currentTracks[currentIndex] ? currentTracks[currentIndex].videoId : null;
+  // Track by uid, not videoId: advancing between two copies of the same song
+  // is still a track change and has to reload the player.
+  const previousUid = currentTracks[currentIndex] ? currentTracks[currentIndex].uid : null;
   currentTracks = state.tracks;
   currentIndex = state.currentIndex;
+  rotationEnabled = state.rotation !== false;
   updateQueueBadge();
 
   if (viewingQueue) {
@@ -78,8 +153,8 @@ function applyQueueState(state) {
     highlightPlayingTrack();
   }
 
-  const nowPlayingId = currentTracks[currentIndex] ? currentTracks[currentIndex].videoId : null;
-  if (nowPlayingId !== previousPlayingId) {
+  const nowPlayingUid = currentTracks[currentIndex] ? currentTracks[currentIndex].uid : null;
+  if (nowPlayingUid !== previousUid) {
     loadCurrentTrackIntoPlayer();
   }
 }
@@ -92,9 +167,10 @@ async function refreshQueue() {
   }
 }
 
-async function loadSearchIndex() {
+async function loadSearchIndex(refresh = false) {
   try {
-    allTracksIndex = await api("/api/library/all");
+    if (refresh) searchBoxEl.placeholder = "Refreshing library…";
+    allTracksIndex = await api(refresh ? "/api/library/all?refresh=1" : "/api/library/all");
     searchBoxEl.disabled = false;
     searchBoxEl.placeholder = "Search your library…";
   } catch (err) {
@@ -233,6 +309,19 @@ function showQueue() {
   title.textContent = `Queue (${currentTracks.length})`;
   libraryListEl.appendChild(title);
 
+  const rotationBtn = document.createElement("button");
+  rotationBtn.id = "rotation-btn";
+  rotationBtn.classList.toggle("on", rotationEnabled);
+  rotationBtn.textContent = rotationEnabled
+    ? "🔁 Fair rotation: on"
+    : "🔁 Fair rotation: off";
+  rotationBtn.title =
+    "When on, someone's 2nd request waits until everyone else has had a turn";
+  rotationBtn.onclick = async () => {
+    applyQueueState(await postJson("/api/queue/rotation", { enabled: !rotationEnabled }));
+  };
+  libraryListEl.appendChild(rotationBtn);
+
   if (currentTracks.length > 1) {
     const shuffleBtn = document.createElement("button");
     shuffleBtn.id = "shuffle-btn";
@@ -253,13 +342,12 @@ function showQueue() {
 }
 
 function renderTrackList(tracks, mode, startIndex = 0) {
-  const playingId = currentTracks[currentIndex] ? currentTracks[currentIndex].videoId : null;
-
   tracks.forEach((track, i) => {
     const idx = startIndex + i;
     const item = document.createElement("div");
     item.className = "track-item";
     item.dataset.videoId = track.videoId;
+    if (track.uid) item.dataset.uid = track.uid;
 
     const main = document.createElement("div");
     main.className = "t-main";
@@ -281,15 +369,15 @@ function renderTrackList(tracks, mode, startIndex = 0) {
     item.appendChild(main);
 
     if (mode === "queue") {
-      main.onclick = () => playTrack(idx);
-      if (track.videoId !== playingId) {
+      main.onclick = () => playTrack(track.uid);
+      if (idx !== currentIndex) {
         const removeBtn = document.createElement("button");
         removeBtn.className = "t-action";
         removeBtn.title = "Remove from queue";
         removeBtn.textContent = "✕";
         removeBtn.onclick = (event) => {
           event.stopPropagation();
-          removeFromQueue(idx);
+          removeFromQueue(track.uid);
         };
         item.appendChild(removeBtn);
       }
@@ -324,8 +412,8 @@ async function addToQueue(idx) {
   applyQueueState(await postJson("/api/queue/add", { track: browsingTracks[idx] }));
 }
 
-async function removeFromQueue(idx) {
-  applyQueueState(await postJson("/api/queue/remove", { index: idx }));
+async function removeFromQueue(uid) {
+  applyQueueState(await postJson("/api/queue/remove", { uid }));
 }
 
 async function shuffleAndPlay() {
@@ -347,15 +435,20 @@ async function clearQueue() {
 }
 
 function highlightPlayingTrack() {
-  const playingId = currentTracks[currentIndex] ? currentTracks[currentIndex].videoId : null;
+  const playing = currentTracks[currentIndex] || null;
   document.querySelectorAll(".track-item").forEach((el) => {
-    el.classList.toggle("playing", el.dataset.videoId === playingId);
+    // Queue rows match on uid so a song queued twice only lights up the copy
+    // that's actually playing; browse rows only have a videoId to go on.
+    const match = el.dataset.uid
+      ? playing && el.dataset.uid === playing.uid
+      : playing && el.dataset.videoId === playing.videoId;
+    el.classList.toggle("playing", Boolean(match));
   });
 }
 
-async function playTrack(index) {
-  if (index < 0 || index >= currentTracks.length) return;
-  applyQueueState(await postJson("/api/queue/advance", { index }));
+async function playTrack(uid) {
+  if (!uid) return;
+  applyQueueState(await postJson("/api/queue/advance", { uid }));
 }
 
 function loadCurrentTrackIntoPlayer() {
@@ -387,7 +480,39 @@ function loadCurrentTrackIntoPlayer() {
   }
 }
 
+function updateOffsetIndicator() {
+  if (!offsetIndicatorEl) return;
+  if (!currentOffsetSec) {
+    offsetIndicatorEl.hidden = true;
+    return;
+  }
+  const ms = Math.round(currentOffsetSec * 1000);
+  offsetIndicatorEl.textContent = (ms > 0 ? "lyrics +" : "lyrics ") + ms + "ms";
+  offsetIndicatorEl.hidden = false;
+}
+
+async function nudgeLyricOffset(deltaSec) {
+  const track = currentTracks[currentIndex];
+  if (!track || !track.videoId) return;
+
+  currentOffsetSec = Math.round((currentOffsetSec + deltaSec) * 1000) / 1000;
+  updateOffsetIndicator();
+  lastActiveIdx = -1;
+
+  try {
+    await postJson("/api/lyrics/offset", {
+      video_id: track.videoId,
+      offset_sec: currentOffsetSec,
+    });
+  } catch (err) {
+    // The nudge still applies for this play-through; it just won't be
+    // remembered next time.
+  }
+}
+
 function resetLyrics(status) {
+  currentOffsetSec = 0;
+  updateOffsetIndicator();
   lyricsStatusEl.textContent = status;
   lyricsStatusEl.style.display = "block";
   lyricsLinesEl.innerHTML = "";
@@ -402,6 +527,9 @@ async function loadLyrics(track) {
     if (track.durationSeconds) params.set("duration", track.durationSeconds);
     if (track.videoId) params.set("video_id", track.videoId);
     const data = await api(`/api/lyrics?${params.toString()}`);
+
+    currentOffsetSec = data.offsetSec || 0;
+    updateOffsetIndicator();
 
     if (!data.lines || data.lines.length === 0) {
       resetLyrics("No lyrics found for this track.");
@@ -455,8 +583,11 @@ async function loadLyrics(track) {
 
 function syncLyrics() {
   if (!playerReady || lyricLines.length === 0) return;
-  const t = ytPlayer.getCurrentTime();
-  if (typeof t !== "number") return;
+  const rawTime = ytPlayer.getCurrentTime();
+  if (typeof rawTime !== "number") return;
+  // A positive offset holds each line back, for sources timed against a
+  // different master than the one YouTube is serving.
+  const t = rawTime - currentOffsetSec;
 
   let activeIdx = -1;
   for (let i = 0; i < lyricLines.length; i++) {
@@ -489,12 +620,12 @@ function syncLyrics() {
   lastActiveIdx = activeIdx;
 }
 
-function playNext() {
-  if (currentIndex + 1 < currentTracks.length) playTrack(currentIndex + 1);
+async function playNext() {
+  applyQueueState(await postJson("/api/queue/next", {}));
 }
 
-function playPrev() {
-  if (currentIndex - 1 >= 0) playTrack(currentIndex - 1);
+async function playPrev() {
+  applyQueueState(await postJson("/api/queue/prev", {}));
 }
 
 function togglePlayPause() {
@@ -561,24 +692,35 @@ speedSelectEl.onchange = () => {
 
 async function pollReactions() {
   try {
-    const data = await api("/api/react");
-    if (data.emoji && data.ts !== lastReactionTs) {
-      const firstLoad = lastReactionTs === 0;
-      lastReactionTs = data.ts;
-      // Skip showing a burst for whatever reaction already existed before this
-      // page loaded -- only animate genuinely new ones.
-      if (!firstLoad) spawnReactionBurst(data.emoji);
+    const data = await api(`/api/react?since=${lastReactionSeq}`);
+    lastReactionSeq = data.latestSeq;
+    // Don't replay reactions from before this page loaded -- but from then on,
+    // show every one, not just the newest in each polling window.
+    if (!reactionsPrimed) {
+      reactionsPrimed = true;
+      return;
+    }
+    for (const reaction of data.reactions) {
+      spawnReactionBurst(reaction.emoji, reaction.name);
     }
   } catch (err) {
     // ignore transient poll failures
   }
 }
 
-function spawnReactionBurst(emoji) {
+function spawnReactionBurst(emoji, name) {
   const el = document.createElement("div");
   el.className = "reaction-burst";
   el.textContent = emoji;
-  el.style.left = `${40 + Math.random() * 20}%`;
+  if (name) {
+    const tag = document.createElement("span");
+    tag.className = "reaction-name";
+    tag.textContent = name;
+    el.appendChild(tag);
+  }
+  // Spread wider than the old single-slot version -- several of these can now
+  // be on screen at once.
+  el.style.left = `${15 + Math.random() * 70}%`;
   reactionOverlayEl.appendChild(el);
   el.addEventListener("animationend", () => el.remove());
 }
@@ -695,6 +837,15 @@ document.addEventListener("keydown", (event) => {
     case "F":
       toggleTvMode();
       break;
+    case "[":
+      nudgeLyricOffset(-0.1);
+      break;
+    case "]":
+      nudgeLyricOffset(0.1);
+      break;
+    case "0":
+      nudgeLyricOffset(-currentOffsetSec);
+      break;
     default:
       break;
   }
@@ -717,9 +868,8 @@ async function autoRadio() {
   try {
     const suggestions = await api(`/api/radio/${lastTrack.videoId}`);
     if (suggestions.length === 0) return;
-    const state = await postJson("/api/queue/add_many", { tracks: suggestions });
-    applyQueueState(state);
-    playTrack(currentIndex + 1);
+    applyQueueState(await postJson("/api/queue/add_many", { tracks: suggestions }));
+    playNext();
   } catch (err) {
     // no continuation available -- just stop, same as before
   }
@@ -839,6 +989,22 @@ function endTour() {
   } catch (err) {
     // ignore -- storage unavailable, just won't remember for next time
   }
+}
+
+if (refreshLibraryBtn) {
+  refreshLibraryBtn.onclick = async () => {
+    refreshLibraryBtn.disabled = true;
+    try {
+      await loadSearchIndex(true);
+      if (!viewingQueue) loadLibrary();
+    } finally {
+      refreshLibraryBtn.disabled = false;
+    }
+  };
+}
+
+if (hostUnlockBtn) {
+  hostUnlockBtn.onclick = promptForHostPin;
 }
 
 tourNextBtn.onclick = () => showTourStep(tourIndex + 1);

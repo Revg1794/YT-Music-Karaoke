@@ -494,3 +494,72 @@ body.tv-mode #yt-player {
 body.tv-mode #yt-player:hover {
   opacity: 1;
 }
+
+/* Library re-scan, next to the queue button */
+#refresh-library-btn {
+  flex-shrink: 0;
+  padding: 8px 10px;
+}
+
+#refresh-library-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* Shown only on a host screen that isn't the machine running the server */
+#host-lock {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  padding: 8px 10px;
+  background: #2a2118;
+  border: 1px solid #4a3a22;
+  border-radius: 8px;
+  color: #d9b384;
+  font-size: 12px;
+}
+
+/* display:flex above would otherwise beat the UA rule for [hidden], same as
+   the overlays below. */
+#host-lock[hidden] {
+  display: none;
+}
+
+#host-lock button {
+  flex-shrink: 0;
+  margin-left: auto;
+  padding: 4px 10px;
+  font-size: 12px;
+}
+
+/* Singer rotation toggle in the queue view */
+#rotation-btn {
+  width: 100%;
+  margin-bottom: 8px;
+  text-align: left;
+}
+
+#rotation-btn.on {
+  border-color: #3a5a3a;
+  color: #9fd39f;
+}
+
+/* Current lyric sync correction, when there is one */
+#lyric-offset {
+  align-self: center;
+  margin-left: 4px;
+  color: #8a8a99;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+/* Guest name under an emoji burst */
+.reaction-name {
+  display: block;
+  margin-top: 2px;
+  color: #e8e8ec;
+  font-size: 12px;
+  text-align: center;
+  text-shadow: 0 1px 3px #000;
+}

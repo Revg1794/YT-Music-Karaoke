@@ -1,5 +1,7 @@
 # YT Music Karaoke
 
+[![tests](https://github.com/Revg1794/YT-Music-Karaoke/actions/workflows/tests.yml/badge.svg)](https://github.com/Revg1794/YT-Music-Karaoke/actions/workflows/tests.yml)
+
 A local karaoke-style player for your YouTube Music library: browse your playlists/liked
 songs, play tracks through the official YouTube embedded player, and see big auto-scrolling
 synced lyrics (from [LRCLIB](https://lrclib.net)) — the "TV cast" experience, on your PC.
@@ -79,6 +81,27 @@ it plays. Audio plays through your system's default output device (your PC speak
 If your session eventually expires and library calls start failing, just delete
 `browser.json` and run `run.bat` again to reconnect your account.
 
+### Keyboard shortcuts
+
+| Key | Does |
+|---|---|
+| `Space` | Play / pause |
+| `←` / `→` | Previous / next track |
+| `F` | TV mode (fullscreen big lyrics) |
+| `[` / `]` | Nudge lyric timing 100ms earlier / later |
+| `0` | Reset this track's lyric timing |
+
+The `⟳` button beside the queue button re-scans your YouTube Music library, for songs you've
+saved since the server started.
+
+### Lyrics running early or late?
+
+LRCLIB timings were matched against whatever copy of the song that contributor had, which isn't
+always the one YouTube serves — so a track can be consistently off by a few hundred
+milliseconds. Nudge it with `[` and `]` while it plays; the correction is remembered per song
+(in `lyric_offsets.json`, gitignored) and reapplied every time that track comes up. `0` clears
+it. The current offset shows next to the player controls whenever it isn't zero.
+
 ## Party mode (queue from a phone)
 
 The app is also reachable from other devices on your WiFi. The sidebar shows a **"📱 Guests"**
@@ -86,13 +109,27 @@ link (with a scannable QR code) to a URL like `http://<your-PC's-IP>:8000/remote
 on a phone (same WiFi network) to browse the library and add songs to the shared queue, without
 needing to touch the host PC. The `/remote` page is queue-management only (no player/lyrics) —
 playback always stays on the main page, so you don't get multiple devices trying to play audio
-at once. Removing/shuffling the queue (and skipping the current track) from a guest device is
-possible too, so this is meant for people you trust, not a public event.
+at once.
+
+**Guests can add songs and send reactions — nothing else.** Skipping, removing, reordering and
+clearing are host-only, so nobody can cut the current singer off from the back of the room. The
+host page unlocks those automatically when it's running on the same machine as the server; on
+any other screen (a TV browser on the LAN, say) it asks once for the **host PIN**, printed in
+the server console window at startup.
 
 Guests can type their name on the remote page (remembered on their phone) so the queue shows
-who added what. Search also falls back to live YouTube Music catalog results (not just your
-saved library) when your library has few matches — so guests can request almost anything, not
-just what you've already saved.
+who added what, and reactions show who sent them. Search also falls back to live YouTube Music
+catalog results (not just your saved library) when your library has few matches — so guests can
+request almost anything, not just what you've already saved.
+
+### Fair rotation
+
+With **🔁 Fair rotation** on (the default, toggled in the queue view), a request is slotted in
+by whose turn it is rather than simply appended: someone's second song waits until everyone
+else has had a first. One enthusiastic guest queueing five songs in a row no longer locks out
+the rest of the room. Whoever is currently singing counts as having just had their turn, so a
+newcomer's first song goes ahead of the current singer's next one. Turn it off for plain
+first-in, first-out order. Auto-radio filler is always appended and never takes a turn.
 
 The queue is shared and persisted server-side (`queue_state.json`, gitignored) — refreshing the
 page, or even restarting the server, restores it.
@@ -184,6 +221,29 @@ Delete `browser.json` and run `run.bat` again to reconnect your account — see 
 See **Notes / known limitations** below — you can also paste your own lyrics for that song
 using the ✎ button next to the player controls.
 
+**The lyrics are right but drift ahead of / behind the singing.**
+Nudge them with `[` and `]` — see **Lyrics running early or late?** above. It's remembered for
+that song.
+
+**The host page says "Host controls are locked."**
+That page isn't running on the machine hosting the server (a TV browser or another laptop, for
+instance), so it can't be told the PIN automatically. Click **Enter PIN** and type the four
+digits printed in the server console window at startup. The PIN changes every time the server
+restarts.
+
+**A guest can't skip or remove songs from their phone.**
+That's deliberate — guests add songs and send reactions, and everything else is host-only. Do
+it from the host page.
+
+**A guest queued five songs in a row and nobody else can get a turn.**
+Check **🔁 Fair rotation** is on in the queue view — with it on, their later songs
+automatically fall in behind everyone else's. It only affects songs added after it's switched
+on; use 🔀 or remove a few to fix a queue that's already lopsided.
+
+**I saved a song in YouTube Music but it doesn't show up in search.**
+The library index is built once when the server starts. Hit the `⟳` button next to the queue
+button to re-scan.
+
 ## Notes / known limitations
 
 - If a track has no match on LRCLIB, you'll see "No lyrics found" instead of a sync view.
@@ -196,7 +256,27 @@ using the ✎ button next to the player controls.
   prefers entries with a real album tag) to pick the most likely correct one, but an occasional
   wrong match is still possible for obscure/duplicate entries.
 - Playback speed (next to the TV-mode button) uses YouTube's own player rates, which vary a bit
-  per video.
+  per video. There's no key/pitch shifting — audio comes from YouTube's embedded player, which
+  doesn't expose the raw stream to work on.
+- The host PIN keeps guests from grabbing playback controls; it is **not** real authentication.
+  Anyone already on your WiFi could guess four digits. As with the rest of this app, don't
+  expose it to the internet.
 - Lyric lines highlight as a whole by default; if a lyrics source includes inline word-level
   timestamps (`<mm:ss.xx>word`, rare on LRCLIB but usable in a manual override), that line gets
   word-by-word "bouncing ball" highlighting instead.
+
+## Development
+
+The queue logic — uid addressing, the singer rotation, index bookkeeping — has tests:
+
+```
+.venv\Scripts\pip install -r backend\requirements-dev.txt
+.venv\Scripts\python.exe -m pytest tests -q
+```
+
+They run on every push and pull request via GitHub Actions (`.github/workflows/tests.yml`),
+which also checks that the backend imports cleanly.
+
+Queue entries are addressed by a `uid` assigned on insertion, never by list position: guest
+phones only re-sync every few seconds, and with positional edits two people acting at once
+would remove or jump to whichever song had slid into that slot.

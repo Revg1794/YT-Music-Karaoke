@@ -2,7 +2,6 @@ const libraryListEl = document.getElementById("library-list");
 const searchBoxEl = document.getElementById("search-box");
 const queueBtn = document.getElementById("queue-btn");
 const nowPlayingTextEl = document.getElementById("now-playing-text");
-const skipBtn = document.getElementById("skip-btn");
 const guestNameEl = document.getElementById("guest-name");
 
 let browsingTracks = [];
@@ -10,6 +9,7 @@ let queueTracks = [];
 let queueIndex = -1;
 let allTracksIndex = [];
 let viewingQueue = false;
+let rotationEnabled = true;
 
 guestNameEl.value = localStorage.getItem("karaoke_guest_name") || "";
 guestNameEl.oninput = () => {
@@ -36,6 +36,7 @@ function postJson(path, body) {
 function applyQueueState(state) {
   queueTracks = state.tracks;
   queueIndex = state.currentIndex;
+  rotationEnabled = state.rotation !== false;
   queueBtn.textContent = `🎵 Queue (${queueTracks.length})`;
   const playing = queueTracks[queueIndex];
   nowPlayingTextEl.textContent = playing ? `${playing.title} — ${playing.artist}` : "—";
@@ -216,6 +217,13 @@ function renderQueueView() {
   title.textContent = `Queue (${queueTracks.length})`;
   libraryListEl.appendChild(title);
 
+  const hint = document.createElement("div");
+  hint.style.cssText = "color:#6f6f7c;font-size:12px;margin-bottom:10px;";
+  hint.textContent = rotationEnabled
+    ? "The host runs playback. Songs are ordered so everyone gets a turn."
+    : "The host runs playback.";
+  libraryListEl.appendChild(hint);
+
   queueTracks.forEach((track, idx) => {
     const item = document.createElement("div");
     item.className = "track-item";
@@ -239,18 +247,6 @@ function renderQueueView() {
     main.appendChild(a);
     item.appendChild(main);
 
-    if (idx !== queueIndex) {
-      const removeBtn = document.createElement("button");
-      removeBtn.className = "t-action";
-      removeBtn.title = "Remove from queue";
-      removeBtn.textContent = "✕";
-      removeBtn.onclick = async (event) => {
-        event.stopPropagation();
-        applyQueueState(await postJson("/api/queue/remove", { index: idx }));
-      };
-      item.appendChild(removeBtn);
-    }
-
     libraryListEl.appendChild(item);
   });
 }
@@ -260,14 +256,12 @@ function showQueue() {
   renderQueueView();
 }
 
-skipBtn.onclick = async () => {
-  if (queueIndex + 1 < queueTracks.length) {
-    applyQueueState(await postJson("/api/queue/advance", { index: queueIndex + 1 }));
-  }
-};
-
 document.querySelectorAll("#reactions button").forEach((btn) => {
-  btn.onclick = () => postJson("/api/react", { emoji: btn.dataset.emoji });
+  btn.onclick = () =>
+    postJson("/api/react", {
+      emoji: btn.dataset.emoji,
+      name: guestNameEl.value.trim() || null,
+    });
 });
 
 searchBoxEl.oninput = () => runSearch(searchBoxEl.value);

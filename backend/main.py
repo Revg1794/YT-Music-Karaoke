@@ -7,26 +7,74 @@ Then open http://localhost:8000 in a browser.
 import asyncio
 import base64
 import io
+import secrets
 import socket
-import time
+from collections import deque
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 import qrcode
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from ytmusicapi import YTMusic
 
 import queue_state
-from lyrics import fetch_lyrics, set_manual_lyrics
+from lyrics import fetch_lyrics, set_manual_lyrics, set_offset
 
 BACKEND_DIR = Path(__file__).resolve().parent
 PROJECT_DIR = BACKEND_DIR.parent
 FRONTEND_DIR = PROJECT_DIR / "frontend"
 AUTH_FILE = PROJECT_DIR / "browser.json"
 
-app = FastAPI(title="YT Music Karaoke")
+# Anything that changes playback or touches someone else's song is host-only,
+# so a guest can't skip the singer or wipe the queue from the back of the room.
+# The host page picks this up automatically over localhost; a host screen on
+# another device (a TV browser, say) types the PIN once. It's griefing
+# prevention among people already on your WiFi, not real authentication.
+HOST_PIN = f"{secrets.randbelow(10000):04d}"
+LOCAL_CLIENTS = {"127.0.0.1", "::1", "localhost"}
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Announce the PIN once the server is actually up, so it lands at the
+    bottom of the console window rather than scrolling past during import.
+    Explicit flush because stdout is block-buffered when it isn't a terminal."""
+    for line in (
+        "",
+        "  Host PIN for this session: " + HOST_PIN,
+        "  (only needed to unlock host controls away from this machine)",
+        "",
+    ):
+        print(line, flush=True)
+    yield
+
+
+app = FastAPI(title="YT Music Karaoke", lifespan=lifespan)
+
+
+def require_host(x_host_pin: str | None = Header(default=None)) -> None:
+    if x_host_pin != HOST_PIN:
+        raise HTTPException(
+            status_code=403,
+            detail="Host controls are locked. Enter the host PIN shown in the server window.",
+        )
+
+
+host_only = [Depends(require_host)]
+
+
+@app.get("/api/host-pin")
+def host_pin(request: Request):
+    """Hand the PIN to the host page automatically when it's the machine
+    running the server. Guests on the LAN get a 403 and stay guests."""
+    client = request.client.host if request.client else None
+    if client not in LOCAL_CLIENTS:
+        raise HTTPException(status_code=403, detail="Not a local client.")
+    return {"pin": HOST_PIN}
+
 
 _ytmusic: YTMusic | None = None
 
@@ -130,17 +178,23 @@ def playlist_tracks(playlist_id: str):
 
 
 _library_index_cache: list[dict] | None = None
+_library_index_lock = asyncio.Lock()
 
 
 @app.get("/api/library/all")
-async def library_all():
+async def library_all(refresh: bool = False):
     """Flattened, deduped list of every track across all playlists + Liked Songs,
-    for client-side search. Fetches playlists in parallel and caches for the life
-    of the server process (restart to pick up library changes)."""
+    for client-side search. Fetches playlists in parallel and caches it, so
+    songs saved to the library mid-party need `?refresh=1` to show up."""
     global _library_index_cache
-    if _library_index_cache is not None:
+    async with _library_index_lock:
+        if _library_index_cache is not None and not refresh:
+            return _library_index_cache
+        _library_index_cache = await _build_library_index()
         return _library_index_cache
 
+
+async def _build_library_index() -> list[dict]:
     yt = get_ytmusic()
     playlists = await asyncio.to_thread(yt.get_library_playlists, limit=200)
     liked_data = await asyncio.to_thread(yt.get_liked_songs, limit=500)
@@ -174,7 +228,6 @@ async def library_all():
                 seen_video_ids.add(track["videoId"])
                 all_tracks.append(track)
 
-    _library_index_cache = all_tracks
     return all_tracks
 
 
@@ -202,9 +255,20 @@ class LyricsOverride(BaseModel):
     text: str
 
 
-@app.post("/api/lyrics/override")
+@app.post("/api/lyrics/override", dependencies=host_only)
 async def lyrics_override(body: LyricsOverride):
     return await asyncio.to_thread(set_manual_lyrics, body.video_id, body.text)
+
+
+class LyricsOffset(BaseModel):
+    video_id: str
+    offset_sec: float
+
+
+@app.post("/api/lyrics/offset", dependencies=host_only)
+async def lyrics_offset(body: LyricsOffset):
+    """Per-track sync correction, nudged from the host page with [ and ]."""
+    return await asyncio.to_thread(set_offset, body.video_id, body.offset_sec)
 
 
 @app.get("/api/queue")
@@ -217,7 +281,7 @@ class SetQueueBody(BaseModel):
     startIndex: int = 0
 
 
-@app.post("/api/queue/set")
+@app.post("/api/queue/set", dependencies=host_only)
 async def set_queue(body: SetQueueBody):
     return await asyncio.to_thread(queue_state.set_queue, body.tracks, body.startIndex)
 
@@ -228,6 +292,8 @@ class AddTrackBody(BaseModel):
 
 @app.post("/api/queue/add")
 async def add_to_queue(body: AddTrackBody):
+    """The one queue mutation guests are allowed. Where the song lands is up to
+    the rotation, not the requester."""
     return await asyncio.to_thread(queue_state.add_track, body.track)
 
 
@@ -235,47 +301,82 @@ class AddManyBody(BaseModel):
     tracks: list[dict]
 
 
-@app.post("/api/queue/add_many")
+@app.post("/api/queue/add_many", dependencies=host_only)
 async def add_many_to_queue(body: AddManyBody):
     return await asyncio.to_thread(queue_state.add_tracks, body.tracks)
 
 
-class IndexBody(BaseModel):
-    index: int
+class UidBody(BaseModel):
+    uid: str
 
 
-@app.post("/api/queue/remove")
-async def remove_from_queue(body: IndexBody):
-    return await asyncio.to_thread(queue_state.remove_track, body.index)
+@app.post("/api/queue/remove", dependencies=host_only)
+async def remove_from_queue(body: UidBody):
+    return await asyncio.to_thread(queue_state.remove_track, body.uid)
 
 
-@app.post("/api/queue/advance")
-async def advance_queue(body: IndexBody):
-    return await asyncio.to_thread(queue_state.advance_to, body.index)
+@app.post("/api/queue/advance", dependencies=host_only)
+async def advance_queue(body: UidBody):
+    return await asyncio.to_thread(queue_state.advance_to, body.uid)
 
 
-@app.post("/api/queue/shuffle")
+@app.post("/api/queue/next", dependencies=host_only)
+async def next_track():
+    return await asyncio.to_thread(queue_state.advance_relative, 1)
+
+
+@app.post("/api/queue/prev", dependencies=host_only)
+async def prev_track():
+    return await asyncio.to_thread(queue_state.advance_relative, -1)
+
+
+class RotationBody(BaseModel):
+    enabled: bool
+
+
+@app.post("/api/queue/rotation", dependencies=host_only)
+async def set_rotation(body: RotationBody):
+    return await asyncio.to_thread(queue_state.set_rotation, body.enabled)
+
+
+@app.post("/api/queue/shuffle", dependencies=host_only)
 async def shuffle_queue():
     return await asyncio.to_thread(queue_state.shuffle)
 
 
-_last_reaction: dict = {"emoji": None, "ts": 0}
+# A ring buffer rather than a single slot: the host page polls on an interval,
+# and with a room full of people tapping at once, one-in-flight-at-a-time meant
+# every reaction but the last got silently dropped between polls.
+_reactions: deque[dict] = deque(maxlen=50)
+_reaction_seq = 0
 
 
 class ReactionBody(BaseModel):
     emoji: str
+    name: str | None = None
 
 
 @app.post("/api/react")
 def post_reaction(body: ReactionBody):
-    global _last_reaction
-    _last_reaction = {"emoji": body.emoji, "ts": time.time()}
-    return _last_reaction
+    global _reaction_seq
+    _reaction_seq += 1
+    entry = {
+        "emoji": body.emoji,
+        "seq": _reaction_seq,
+        "name": (body.name or "").strip() or None,
+    }
+    _reactions.append(entry)
+    return entry
 
 
 @app.get("/api/react")
-def get_reaction():
-    return _last_reaction
+def get_reactions(since: int = 0):
+    """Everything newer than the caller's last-seen sequence number. A client
+    starting fresh passes since=0 and uses latestSeq to skip the backlog."""
+    return {
+        "reactions": [r for r in _reactions if r["seq"] > since],
+        "latestSeq": _reaction_seq,
+    }
 
 
 def _lan_ip() -> str:

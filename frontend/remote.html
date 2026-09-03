@@ -18,17 +18,6 @@
   }
   #now-playing-readout strong { color: #e8e8ec; }
   #now-playing-readout { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-  #skip-btn {
-    flex-shrink: 0;
-    background: #22222a;
-    border: none;
-    color: #e8e8ec;
-    border-radius: 8px;
-    padding: 6px 12px;
-    font-size: 13px;
-    cursor: pointer;
-  }
-  #skip-btn:hover { background: #2c2c3a; }
   #guest-name {
     flex-shrink: 0;
     width: 100%;
@@ -65,7 +54,6 @@
   <div id="app">
     <div id="now-playing-readout">
       <span>Now playing: <strong id="now-playing-text">—</strong></span>
-      <button id="skip-btn" title="Skip to next">⏭ Skip</button>
     </div>
     <div id="reactions">
       <button data-emoji="🎉">🎉</button>

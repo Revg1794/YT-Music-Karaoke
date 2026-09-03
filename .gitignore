@@ -4,3 +4,4 @@ queue_state.json
 __pycache__/
 *.pyc
 .venv/
+lyric_offsets.json

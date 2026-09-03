@@ -12,7 +12,12 @@
       <input id="search-box" type="text" placeholder="Loading library index…" disabled />
       <div id="header-row">
         <button id="queue-btn">🎵 Queue (0)</button>
+        <button id="refresh-library-btn" title="Re-scan your YouTube Music library">⟳</button>
         <button id="help-btn" title="Show the quick tour">❓</button>
+      </div>
+      <div id="host-lock" hidden>
+        🔒 Host controls are locked on this screen.
+        <button id="host-unlock-btn">Enter PIN</button>
       </div>
       <button id="recap-btn">🏆 Recap</button>
       <div id="party-info" hidden>
@@ -45,6 +50,7 @@
           </select>
           <button id="tv-mode-btn" title="TV mode">⛶</button>
           <button id="edit-lyrics-btn" title="Edit lyrics for this track">✎</button>
+          <span id="lyric-offset" title="Lyric sync offset — [ and ] to nudge, 0 to reset" hidden></span>
         </div>
       </div>
 

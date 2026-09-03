@@ -180,7 +180,7 @@ async def fetch_lyrics(artist: str, title: str, duration: int | None, video_id: 
     repeat plays of the same track skip LRCLIB/YouTube entirely."""
     cache = _load_cache()
     if video_id and video_id in cache:
-        return cache[video_id]
+        return _with_offset(cache[video_id], video_id)
 
     result = await _fetch_lyrics_uncached(artist, title, duration, video_id)
 
@@ -188,7 +188,7 @@ async def fetch_lyrics(artist: str, title: str, duration: int | None, video_id: 
         cache[video_id] = result
         await asyncio.to_thread(_save_cache)
 
-    return result
+    return _with_offset(result, video_id)
 
 
 async def _fetch_lyrics_uncached(artist: str, title: str, duration: int | None, video_id: str | None) -> dict:
@@ -221,3 +221,61 @@ async def _fetch_lyrics_uncached(artist: str, title: str, duration: int | None, 
             return captions_result
 
     return {"synced": False, "lines": [], "source": None}
+
+
+# --- Per-track sync offset -------------------------------------------------
+#
+# LRCLIB timings are matched against whatever master that submitter had, which
+# is often not the master YouTube is serving -- so a track can be reliably
+# early or late by a few hundred ms. The host nudges it at playback time and we
+# remember the correction per video, separately from the lyrics cache so
+# re-fetching lyrics doesn't discard it.
+
+OFFSETS_PATH = Path(__file__).resolve().parent.parent / "lyric_offsets.json"
+
+MAX_OFFSET_SEC = 10.0
+
+_offsets: dict[str, float] | None = None
+
+
+def _load_offsets() -> dict[str, float]:
+    global _offsets
+    if _offsets is None:
+        try:
+            _offsets = json.loads(OFFSETS_PATH.read_text(encoding="utf-8"))
+        except (FileNotFoundError, json.JSONDecodeError):
+            _offsets = {}
+    return _offsets
+
+
+def _save_offsets() -> None:
+    tmp_path = OFFSETS_PATH.with_suffix(".json.tmp")
+    tmp_path.write_text(json.dumps(_offsets), encoding="utf-8")
+    tmp_path.replace(OFFSETS_PATH)
+
+
+def get_offset(video_id: str | None) -> float:
+    if not video_id:
+        return 0.0
+    return _load_offsets().get(video_id, 0.0)
+
+
+def set_offset(video_id: str, offset_sec: float) -> dict:
+    """Store a sync correction in seconds (positive = show lyrics later).
+    Blocking (file I/O); call via asyncio.to_thread from an async context."""
+    offsets = _load_offsets()
+    offset_sec = max(-MAX_OFFSET_SEC, min(MAX_OFFSET_SEC, round(float(offset_sec), 3)))
+
+    if offset_sec == 0:
+        offsets.pop(video_id, None)
+    else:
+        offsets[video_id] = offset_sec
+
+    _save_offsets()
+    return {"videoId": video_id, "offsetSec": offset_sec}
+
+
+def _with_offset(result: dict, video_id: str | None) -> dict:
+    """Copy rather than mutate -- `result` is the object living in the lyrics
+    cache, and the offset must not get written into lyrics_cache.json."""
+    return {**result, "offsetSec": get_offset(video_id)}

@@ -1,0 +1,9 @@
+# Questions go to Discussions so the issue list stays things that need fixing.
+blank_issues_enabled: false
+contact_links:
+  - name: Question or help getting set up
+    url: https://github.com/Revg1794/YT-Music-Karaoke/discussions
+    about: Auth trouble, setup help, "is this possible" — anything not a bug.
+  - name: Security concern
+    url: https://github.com/Revg1794/YT-Music-Karaoke/security/advisories/new
+    about: Report privately instead of opening a public issue.

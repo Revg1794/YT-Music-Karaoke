@@ -1,0 +1,19 @@
+name: Idea or feature request
+description: Suggest something it should do
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: What should it do
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: What are you trying to do at the party
+      description: |
+        The situation matters more than the feature. "People keep hogging the
+        queue" leads somewhere better than "add a queue limit".
+    validations:
+      required: true

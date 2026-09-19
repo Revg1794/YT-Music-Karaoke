@@ -1,0 +1,82 @@
+name: Bug report
+description: Something doesn't work
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ### ⚠️ Never paste the contents of `browser.json`
+
+        That file is a live session for your Google account. Anyone reading this
+        issue could sign in as you, and deleting the comment later doesn't undo
+        it — it has already gone out in email notifications.
+
+        The same goes for anything you copied out of browser DevTools while
+        setting up auth: cookie tables, `Copy as cURL` output, request headers.
+        Describe what you saw instead of pasting it.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What did you expect, and what did you get instead?
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Which part
+      options:
+        - Setting up auth / signing in
+        - Searching or loading my library
+        - Playback
+        - Lyrics (missing, wrong, or out of sync)
+        - TV mode
+        - Party mode / phone remote
+        - The queue or rotation order
+        - Installing or starting it up
+        - Something else
+    validations:
+      required: true
+
+  - type: input
+    id: song
+    attributes:
+      label: The song it went wrong on
+      description: If it's song-specific. A YouTube Music link is ideal.
+      placeholder: Artist - Title
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Windows
+        - macOS
+        - Linux
+    validations:
+      required: true
+
+  - type: input
+    id: browser
+    attributes:
+      label: Browser
+      description: And the device, if the problem is on the phone remote.
+      placeholder: Chrome on Windows / Safari on iPhone
+
+  - type: textarea
+    id: terminal
+    attributes:
+      label: Terminal output
+      description: |
+        Errors from the window the backend is running in. Scrub anything that
+        looks like a cookie or token before pasting.
+      render: text
+
+  - type: textarea
+    id: console
+    attributes:
+      label: Browser console errors
+      description: F12 → Console. Only if the problem is visual or in the remote.
+      render: text

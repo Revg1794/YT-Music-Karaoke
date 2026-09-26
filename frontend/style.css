@@ -563,3 +563,35 @@ body.tv-mode #yt-player:hover {
   text-align: center;
   text-shadow: 0 1px 3px #000;
 }
+
+/* Shown when the YouTube Music session has expired or was never set up. */
+#auth-banner {
+  display: block;
+  margin-bottom: 10px;
+  padding: 10px;
+  background: #2a1a1a;
+  border: 1px solid #5a2f2f;
+  border-radius: 8px;
+  color: #e8a0a0;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+#auth-banner[hidden] {
+  display: none;
+}
+
+#auth-message {
+  margin-bottom: 8px;
+}
+
+#auth-reconnect-btn {
+  width: 100%;
+  padding: 7px 10px;
+  font-size: 12px;
+}
+
+#auth-reconnect-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}

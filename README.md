@@ -78,8 +78,18 @@ after that just starts the server directly.
 Pick a playlist or Liked Songs from the sidebar, click a track, and the lyrics panel syncs as
 it plays. Audio plays through your system's default output device (your PC speakers).
 
-If your session eventually expires and library calls start failing, just delete
-`browser.json` and run `run.bat` again to reconnect your account.
+### When the session expires
+
+Google signs these browser sessions out every so often — typically after a couple of weeks.
+It happens quietly: YouTube Music keeps answering normally, it just answers as though you're
+logged out, so the library comes back empty.
+
+The app checks on startup and says so, instead of showing you an empty sidebar and leaving you
+to guess. Click **Reconnect account** in the banner, log into the Chrome window that opens, and
+it picks up from there — the window closes itself once you're signed in. `run.bat` runs the same
+check before starting, so it'll offer the login up front if the session died while you were away.
+
+Nothing needs deleting, and your queue and lyrics are untouched.
 
 ### Keyboard shortcuts
 
@@ -215,7 +225,18 @@ taskkill /PID <the number in the last column> /F
 ```
 
 **My session expired / library calls started failing after it worked fine before.**
-Delete `browser.json` and run `run.bat` again to reconnect your account — see **Quick start**.
+Expected every couple of weeks — Google expires the session. The app detects it and offers a
+**Reconnect account** button; see **When the session expires** above. You can also run
+`.venv\Scripts\python.exe setup_auth.py` directly, or check the session without starting the
+app:
+
+```
+.venv\Scripts\python.exe backend\ytauth.py --check
+```
+
+**The library is empty but there's no error.**
+Same cause — a signed-out session returns an empty library rather than failing. The startup
+check catches this; if you got there some other way, hit **Reconnect account**.
 
 **A song has no lyrics, or the wrong lyrics.**
 See **Notes / known limitations** below — you can also paste your own lyrics for that song
@@ -258,6 +279,9 @@ button to re-scan.
 - Playback speed (next to the TV-mode button) uses YouTube's own player rates, which vary a bit
   per video. There's no key/pitch shifting — audio comes from YouTube's embedded player, which
   doesn't expose the raw stream to work on.
+- Sessions expire. `browser.json` holds browser cookies, and Google rotates them out after a
+  while — expect to reconnect every couple of weeks. The app detects it rather than failing
+  mysteriously, but it can't avoid it.
 - The host PIN keeps guests from grabbing playback controls; it is **not** real authentication.
   Anyone already on your WiFi could guess four digits. As with the rest of this app, don't
   expose it to the internet.

@@ -33,6 +33,9 @@ const refreshLibraryBtn = document.getElementById("refresh-library-btn");
 const offsetIndicatorEl = document.getElementById("lyric-offset");
 const hostLockEl = document.getElementById("host-lock");
 const hostUnlockBtn = document.getElementById("host-unlock-btn");
+const authBannerEl = document.getElementById("auth-banner");
+const authMessageEl = document.getElementById("auth-message");
+const authReconnectBtn = document.getElementById("auth-reconnect-btn");
 
 let lastReactionSeq = 0;
 // Separate from lastReactionSeq: on a fresh server nobody has reacted yet, so
@@ -138,6 +141,75 @@ async function postJson(path, body) {
   }
 }
 
+// Google expires these sessions quietly -- library calls just start coming
+// back signed-out. Rather than leaving an empty sidebar and a cryptic failure,
+// check on load, and say so plainly when a call turns out to be the cause.
+let authOk = true;
+
+function showAuthProblem(message, { busy = false } = {}) {
+  authOk = false;
+  authMessageEl.textContent = message;
+  authBannerEl.hidden = false;
+  authReconnectBtn.disabled = busy;
+  authReconnectBtn.textContent = busy ? "Waiting for login…" : "Reconnect account";
+  // Only the machine running the server can open a login window.
+  authReconnectBtn.hidden = !hostPin;
+}
+
+function clearAuthProblem() {
+  authOk = true;
+  authBannerEl.hidden = true;
+}
+
+async function checkAuth({ quiet = false } = {}) {
+  try {
+    const data = await api("/api/auth/status");
+    if (data.ok) {
+      clearAuthProblem();
+    } else {
+      showAuthProblem(data.message, { busy: data.job === "running" });
+    }
+    return data;
+  } catch (err) {
+    if (!quiet) showAuthProblem("Couldn't check the account connection.");
+    return null;
+  }
+}
+
+// Any 401 from a library call means the session died mid-session.
+function noteApiError(err) {
+  if (err && err.status === 401) {
+    showAuthProblem(err.message);
+    return true;
+  }
+  return false;
+}
+
+async function reconnectAccount() {
+  await hostPinReady;
+  try {
+    await postJson("/api/auth/reconnect", {});
+  } catch (err) {
+    showAuthProblem(err.message);
+    return;
+  }
+
+  showAuthProblem("A Chrome window is opening — log in there.", { busy: true });
+
+  // The login is a person typing a password, so poll patiently.
+  for (let attempt = 0; attempt < 160; attempt++) {
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+    const data = await checkAuth({ quiet: true });
+    if (!data) continue;
+    if (data.ok) {
+      loadLibrary();
+      loadSearchIndex(true);
+      return;
+    }
+    if (data.job !== "running") return;
+  }
+}
+
 function applyQueueState(state) {
   // Track by uid, not videoId: advancing between two copies of the same song
   // is still a track change and has to reload the player.
@@ -174,6 +246,7 @@ async function loadSearchIndex(refresh = false) {
     searchBoxEl.disabled = false;
     searchBoxEl.placeholder = "Search your library…";
   } catch (err) {
+    noteApiError(err);
     searchBoxEl.placeholder = "Search unavailable";
   }
 }
@@ -261,7 +334,11 @@ async function loadLibrary() {
       libraryListEl.appendChild(item);
     }
   } catch (err) {
-    libraryListEl.innerHTML = `<div style="color:#f66;font-size:13px;">${err.message}</div>`;
+    if (noteApiError(err)) {
+      libraryListEl.textContent = "";
+    } else {
+      libraryListEl.innerHTML = `<div style="color:#f66;font-size:13px;">${err.message}</div>`;
+    }
   }
 }
 
@@ -1007,10 +1084,13 @@ if (hostUnlockBtn) {
   hostUnlockBtn.onclick = promptForHostPin;
 }
 
+authReconnectBtn.onclick = reconnectAccount;
+
 tourNextBtn.onclick = () => showTourStep(tourIndex + 1);
 tourSkipBtn.onclick = endTour;
 helpBtn.onclick = startTour;
 
+hostPinReady.then(() => checkAuth());
 loadLibrary();
 loadSearchIndex();
 refreshQueue();

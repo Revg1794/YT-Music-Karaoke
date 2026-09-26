@@ -21,6 +21,7 @@ from pydantic import BaseModel
 from ytmusicapi import YTMusic
 
 import queue_state
+import ytauth
 from lyrics import fetch_lyrics, set_manual_lyrics, set_offset
 
 BACKEND_DIR = Path(__file__).resolve().parent
@@ -76,6 +77,59 @@ def host_pin(request: Request):
     return {"pin": HOST_PIN}
 
 
+# --- account session -------------------------------------------------------
+#
+# Google expires these browser sessions after a while, and does it quietly: no
+# error, just signed-out responses. The app checks on load and offers to
+# reconnect rather than leaving you with a mysteriously empty library.
+
+_auth_job: dict = {"state": "idle", "message": "", "error": None}
+_auth_task: asyncio.Task | None = None
+
+
+@app.get("/api/auth/status")
+def auth_status():
+    """Probes YouTube Music -- except while a reconnect is in flight, when it
+    just reports the job so the UI can poll this cheaply."""
+    if _auth_job["state"] == "running":
+        return {
+            "status": "connecting",
+            "ok": False,
+            "account": None,
+            "message": _auth_job["message"] or "Waiting for you to log in...",
+            "job": "running",
+        }
+
+    result = ytauth.check_auth()
+    result["job"] = _auth_job["state"]
+    if _auth_job["state"] == "failed" and not result["ok"]:
+        result["message"] = _auth_job["error"] or result["message"]
+    return result
+
+
+def _run_reconnect() -> None:
+    """Worker-thread body: drives a real Chrome window. Must not run on the
+    event loop -- Playwright's sync API refuses a thread that has one."""
+    try:
+        ytauth.capture_login(on_status=lambda message: _auth_job.update(message=message))
+        _forget_session()
+        _auth_job.update(state="done", message="Connected.", error=None)
+    except Exception as err:
+        _auth_job.update(state="failed", message=str(err), error=str(err))
+
+
+@app.post("/api/auth/reconnect", dependencies=host_only)
+async def auth_reconnect():
+    """Opens a login window on the machine running the server, so this is
+    host-only -- a guest tapping it would pop Chrome up in someone's kitchen."""
+    global _auth_task
+    if _auth_job["state"] != "running":
+        _auth_job.update(state="running", message="Opening Chrome...", error=None)
+        # Keep the reference: a bare create_task can be garbage collected.
+        _auth_task = asyncio.create_task(asyncio.to_thread(_run_reconnect))
+    return {"state": _auth_job["state"], "message": _auth_job["message"]}
+
+
 _ytmusic: YTMusic | None = None
 
 
@@ -83,15 +137,37 @@ def get_ytmusic() -> YTMusic:
     global _ytmusic
     if _ytmusic is None:
         if not AUTH_FILE.exists():
-            raise HTTPException(
-                status_code=500,
-                detail=(
-                    f"Missing {AUTH_FILE}. Run `ytmusicapi browser` from the project root "
-                    "to generate it (see README.md)."
-                ),
-            )
+            raise HTTPException(status_code=401, detail=ytauth.MESSAGES[ytauth.MISSING])
         _ytmusic = YTMusic(str(AUTH_FILE))
     return _ytmusic
+
+
+def _forget_session() -> None:
+    """Drop the cached client and library index so the next call picks up a
+    freshly written browser.json."""
+    global _ytmusic, _library_index_cache
+    _ytmusic = None
+    _library_index_cache = None
+
+
+def yt_guard(fn, *args, **kwargs):
+    """Run a ytmusicapi call and turn its failures into something the UI can
+    act on. An expired session doesn't raise an auth error -- Google serves the
+    signed-out page and ytmusicapi dies parsing it -- so the real cause is
+    worked out by re-checking the session, not by reading the exception."""
+    try:
+        return fn(*args, **kwargs)
+    except HTTPException:
+        raise
+    except Exception as err:
+        status = ytauth.classify_error(err)
+        if status in (ytauth.EXPIRED, ytauth.MISSING):
+            raise HTTPException(status_code=401, detail=ytauth.MESSAGES[status]) from err
+        if status == ytauth.OFFLINE:
+            raise HTTPException(status_code=503, detail=ytauth.MESSAGES[status]) from err
+        raise HTTPException(
+            status_code=500, detail=f"YouTube Music request failed: {err}"
+        ) from err
 
 
 def _track_summary(track: dict) -> dict:
@@ -140,7 +216,9 @@ async def radio(video_id: str, limit: int = 10):
     automatically once the queue runs out. ytmusicapi's radio mode doesn't
     reliably respect `limit`, so we slice the result ourselves."""
     yt = get_ytmusic()
-    result = await asyncio.to_thread(yt.get_watch_playlist, videoId=video_id, limit=limit, radio=True)
+    result = await asyncio.to_thread(
+        yt_guard, yt.get_watch_playlist, videoId=video_id, limit=limit, radio=True
+    )
     tracks = result.get("tracks", [])
     matches = [
         _radio_track_summary(t) for t in tracks if t.get("videoId") and t.get("videoId") != video_id
@@ -151,7 +229,14 @@ async def radio(video_id: str, limit: int = 10):
 @app.get("/api/library/playlists")
 def library_playlists():
     yt = get_ytmusic()
-    playlists = yt.get_library_playlists(limit=200)
+    playlists = yt_guard(yt.get_library_playlists, limit=200)
+    if not playlists:
+        # A signed-out session doesn't error here, it just comes back empty --
+        # so an empty result is worth a second look before we show the user an
+        # empty library and let them wonder.
+        status = ytauth.check_auth()["status"]
+        if status != ytauth.OK:
+            raise HTTPException(status_code=401, detail=ytauth.MESSAGES[status])
     return [
         {"playlistId": p.get("playlistId"), "title": p.get("title"), "count": p.get("count")}
         for p in playlists
@@ -161,7 +246,7 @@ def library_playlists():
 @app.get("/api/library/liked")
 def library_liked():
     yt = get_ytmusic()
-    data = yt.get_liked_songs(limit=500)
+    data = yt_guard(yt.get_liked_songs, limit=500)
     tracks = data.get("tracks", [])
     return [_track_summary(t) for t in tracks if t.get("videoId")]
 
@@ -169,7 +254,7 @@ def library_liked():
 @app.get("/api/playlist/{playlist_id}")
 def playlist_tracks(playlist_id: str):
     yt = get_ytmusic()
-    data = yt.get_playlist(playlist_id, limit=500)
+    data = yt_guard(yt.get_playlist, playlist_id, limit=500)
     tracks = data.get("tracks", [])
     return {
         "title": data.get("title"),
@@ -196,8 +281,8 @@ async def library_all(refresh: bool = False):
 
 async def _build_library_index() -> list[dict]:
     yt = get_ytmusic()
-    playlists = await asyncio.to_thread(yt.get_library_playlists, limit=200)
-    liked_data = await asyncio.to_thread(yt.get_liked_songs, limit=500)
+    playlists = await asyncio.to_thread(yt_guard, yt.get_library_playlists, limit=200)
+    liked_data = await asyncio.to_thread(yt_guard, yt.get_liked_songs, limit=500)
 
     seen_video_ids: set[str] = set()
     all_tracks: list[dict] = []
@@ -236,7 +321,7 @@ async def search_catalog(q: str = Query(...)):
     """Live search across all of YouTube Music (not just the user's saved
     library) -- lets party guests request a song even if it isn't saved."""
     yt = get_ytmusic()
-    results = await asyncio.to_thread(yt.search, q, filter="songs", limit=15)
+    results = await asyncio.to_thread(yt_guard, yt.search, q, filter="songs", limit=15)
     return [_track_summary(r) for r in results if r.get("videoId")]
 
 

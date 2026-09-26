@@ -19,9 +19,12 @@ echo Installing/updating dependencies...
 ".venv\Scripts\python.exe" -m pip install -q --upgrade pip
 ".venv\Scripts\python.exe" -m pip install -q -r backend\requirements.txt
 
-if not exist browser.json (
+echo Checking your YouTube Music connection...
+".venv\Scripts\python.exe" backend\ytauth.py --check
+if errorlevel 2 goto startserver
+if errorlevel 1 (
     echo.
-    echo No browser.json found -- let's connect your YouTube Music account.
+    echo Let's connect your YouTube Music account.
     ".venv\Scripts\python.exe" setup_auth.py
     if errorlevel 1 (
         echo Account setup failed or was cancelled.
@@ -29,6 +32,7 @@ if not exist browser.json (
         exit /b 1
     )
 )
+:startserver
 
 echo.
 echo Starting server...

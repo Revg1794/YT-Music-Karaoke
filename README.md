@@ -28,13 +28,15 @@ You don't need to know Git at all to just try the app once:
 
 1. Click the green **`<> Code`** button at the top of this GitHub page.
 2. Click **Download ZIP**.
-3. Extract the ZIP anywhere (e.g. `Documents\YT-Music-Karaoke`).
+3. Extract the ZIP anywhere (e.g. `Documents\YT-Music-Karaoke` on Windows, or your home folder
+   on Linux).
 4. Continue with **Quick start** below.
 
 If you'd rather use Git (recommended if you want to easily grab future updates instead of
 re-downloading a ZIP each time):
 
 1. Install [Git for Windows](https://git-scm.com/download/win) if you don't already have it.
+   On Linux (Ubuntu, Mint, Debian), install it from a terminal with `sudo apt install git`.
 2. Open a terminal in the folder where you want the project to live, and run:
    ```
    git clone https://github.com/Revg1794/YT-Music-Karaoke.git
@@ -64,13 +66,40 @@ Two errors you might hit if you go on to make your own commits:
 
 ## Quick start
 
+### Windows
+
 1. Make sure [Python 3.10+](https://python.org) and [Google Chrome](https://www.google.com/chrome/)
    are installed.
 2. Double-click **`run.bat`**.
 
+### Linux (Ubuntu, Linux Mint, Debian)
+
+Python is already installed on these. You only need two small extras, once:
+
+1. Open a terminal (**Ctrl+Alt+T**). Copy the line for your system, paste it into the terminal
+   with **Ctrl+Shift+V**, press Enter, and type your password when asked. Nothing shows while you
+   type the password; that's normal.
+   - **Linux Mint or Debian:**
+     ```
+     sudo apt install python3-venv chromium
+     ```
+   - **Ubuntu:** run `sudo apt install python3-venv`, then install
+     [Google Chrome](https://www.google.com/chrome/) (download the `.deb` file and open it).
+     Ubuntu's own Chromium comes as a "Snap", which may not work for the login window.
+2. Open the project folder in your file manager, right-click an empty spot, and choose
+   **Open in Terminal**.
+3. Type this and press Enter:
+   ```
+   bash run.sh
+   ```
+   Keep that terminal open while you use the app. Closing it (or pressing **Ctrl+C** in it)
+   stops the server.
+
+### What happens next (both systems)
+
 That's it. On first run it creates a virtual environment, installs dependencies, and opens a
-real Chrome window pointed at YouTube Music — log in there normally, then switch back to the
-terminal window and press Enter. It writes `browser.json` (your local auth file — **never
+real browser window pointed at YouTube Music. Log in there normally; the window closes by itself
+once you're signed in. It writes `browser.json` (your local auth file — **never
 commit or share this file**, it's equivalent to a login session; it's already in
 `.gitignore`) and starts the app, opening **http://localhost:8000** automatically. Every run
 after that just starts the server directly.
@@ -86,7 +115,7 @@ logged out, so the library comes back empty.
 
 The app checks on startup and says so, instead of showing you an empty sidebar and leaving you
 to guess. Click **Reconnect account** in the banner, log into the Chrome window that opens, and
-it picks up from there — the window closes itself once you're signed in. `run.bat` runs the same
+it picks up from there — the window closes itself once you're signed in. `run.bat` / `run.sh` run the same
 check before starting, so it'll offer the login up front if the session died while you were away.
 
 Nothing needs deleting, and your queue and lyrics are untouched.
@@ -145,16 +174,26 @@ The queue is shared and persisted server-side (`queue_state.json`, gitignored) �
 page, or even restarting the server, restores it.
 
 The first time you run this, **Windows Firewall will likely prompt** to allow Python through
-the firewall — approve it for **Private networks**. This only works on the same WiFi/LAN, not
+the firewall — approve it for **Private networks**. On Linux there's no pop-up; if guests can't
+connect, see the firewall tip under Troubleshooting. This only works on the same WiFi/LAN, not
 over the internet.
 
-## Manual setup (if you'd rather not use run.bat)
+## Manual setup (if you'd rather not use run.bat / run.sh)
 
+Windows:
 ```
 python -m venv .venv
 .venv\Scripts\pip install -r backend\requirements.txt
 .venv\Scripts\python.exe setup_auth.py
 .venv\Scripts\uvicorn main:app --app-dir backend --port 8000
+```
+
+Linux / macOS:
+```
+python3 -m venv .venv
+.venv/bin/pip install -r backend/requirements.txt
+.venv/bin/python setup_auth.py
+.venv/bin/uvicorn main:app --app-dir backend --port 8000
 ```
 
 `setup_auth.py` is the same login flow `run.bat` triggers automatically — it drives a real
@@ -200,8 +239,18 @@ not just this PC. Approve it for **Private networks**; you don't need Public.
 **A Chrome window opened for login but it says "browser is deprecated" or looks broken.**
 This shouldn't happen with the current `setup_auth.py` (it drives your real installed Chrome),
 but if you see it, make sure Chrome itself is up to date. If `setup_auth.py` can't find Chrome
-at all, it'll tell you to install it from google.com/chrome — Playwright needs the real browser,
-not just any browser.
+at all, it tries a system-installed Chromium next (common on Linux), and only then tells you to
+install Chrome from google.com/chrome — Playwright needs a real desktop browser, not just any
+browser.
+
+**Linux: `run.sh` stops with "ensurepip is not available" or "No module named pip".**
+Python's environment tool is missing. Run `sudo apt install python3-venv`, then delete the
+half-made `.venv` folder inside the project (it's hidden: press **Ctrl+H** in the file manager to
+show hidden files) and run `bash run.sh` again.
+
+**Linux: "Couldn't launch Google Chrome or Chromium."**
+Install one of them as shown in Quick start, step 1 (Chromium on Mint/Debian, Google Chrome on
+Ubuntu), then run `bash run.sh` again.
 
 **Setup asked me to verify it's really me (2FA / "is this you?") even though I'm already
 logged into Chrome elsewhere.**
@@ -212,6 +261,9 @@ one), so Google treats it as a new device. Not a bug.
 Check they're on the **same WiFi network** as the host PC — this only works on your local
 network, not the internet. If they still can't connect, double-check the Windows Firewall
 prompt above was approved (declining it silently blocks other devices).
+On Linux, check whether a firewall is on with `sudo ufw status`. If it says "active", let your
+home network reach the app with `sudo ufw allow 8000/tcp` (nothing listens on that port unless
+the app is running).
 
 **`git commit` says "Please tell me who you are."**
 See the one-time `git config` setup in **Getting the code** above.

@@ -141,10 +141,20 @@ def capture_login(timeout_sec: int = 300, on_status=None) -> dict:
                 args=["--disable-blink-features=AutomationControlled"],
             )
         except Exception as err:
-            raise RuntimeError(
-                "Couldn't launch Google Chrome. This needs the real Chrome installed -- "
-                "get it from https://www.google.com/chrome/ and try again."
-            ) from err
+            # No Google Chrome (common on Linux): a distro Chromium is also a real desktop
+            # browser with a normal user-agent, so try that before giving up.
+            import shutil
+            chromium = next(filter(None, map(shutil.which, ("chromium", "chromium-browser"))), None)
+            if not chromium:
+                raise RuntimeError(
+                    "Couldn't launch Google Chrome or Chromium. This needs a real desktop Chrome or "
+                    "Chromium installed -- get Chrome from https://www.google.com/chrome/ and try again."
+                ) from err
+            browser = p.chromium.launch(
+                headless=False,
+                executable_path=chromium,
+                args=["--disable-blink-features=AutomationControlled"],
+            )
 
         context = browser.new_context()
         page = context.new_page()
